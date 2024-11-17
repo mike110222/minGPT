@@ -35,7 +35,7 @@ class CausalSelfAttention(nn.Module):
 
     def __init__(self, config):
         super().__init__()
-        assert config.n_embd % config.n_head == 0
+        assert config.n_embd % config.n_head == 0   # embedding is split among the heads, not shared by the heads; the embedding is actually a collection of embeddings in multiple latent spaces, one for each head of the multi-head attention, so need to be split; Each attention head in multi-head attention can learn distinct relationships or focus on different types of information (e.g., one head might focus on short-term dependencies, while another could capture long-term dependencies).
         # key, query, value projections for all heads, but in a batch
         self.c_attn = nn.Linear(config.n_embd, 3 * config.n_embd)
         # output projection
