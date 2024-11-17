@@ -41,7 +41,7 @@ class CausalSelfAttention(nn.Module):
         # output projection
         self.c_proj = nn.Linear(config.n_embd, config.n_embd)
         # regularization
-        self.attn_dropout = nn.Dropout(config.attn_pdrop)
+        self.attn_dropout = nn.Dropout(config.attn_pdrop) #Dropout also scales up by 1/(1-p);
         self.resid_dropout = nn.Dropout(config.resid_pdrop)
         # causal mask to ensure that attention is only applied to the left in the input sequence
         self.register_buffer("bias", torch.tril(torch.ones(config.block_size, config.block_size))
@@ -50,7 +50,8 @@ class CausalSelfAttention(nn.Module):
         self.n_embd = config.n_embd
 
     def forward(self, x):
-        B, T, C = x.size() # batch size, sequence length, embedding dimensionality (n_embd)
+        B, T, C = x.size() # batch size, sequence length, embedding dimensionality (n_embd), T can be ≤config.block_size;
+        # during testing, T starts at 6 not 11, the prediction for y[5] depends only on x[0:5] anyway due to the mask; the trained weights for the model are only specific for length=6, as the model has learned to predict y[5] as the first sorted element; the weights don't generalize to other lengths;
 
         # calculate query, key, values for all heads in batch and move head forward to be the batch dim
         q, k ,v  = self.c_attn(x).split(self.n_embd, dim=2)
@@ -60,7 +61,7 @@ class CausalSelfAttention(nn.Module):
 
         # causal self-attention; Self-attend: (B, nh, T, hs) x (B, nh, hs, T) -> (B, nh, T, T)
         att = (q @ k.transpose(-2, -1)) * (1.0 / math.sqrt(k.size(-1)))
-        att = att.masked_fill(self.bias[:,:,:T,:T] == 0, float('-inf'))
+        att = att.masked_fill(self.bias[:,:,:T,:T] == 0, float('-inf')) # if T≠config.block_size, use the T×T upper left corner, which is still mask;
         att = F.softmax(att, dim=-1)
         att = self.attn_dropout(att)
         y = att @ v # (B, nh, T, T) x (B, nh, T, hs) -> (B, nh, T, hs)
@@ -108,7 +109,7 @@ class GPT(nn.Module):
         C.block_size = None
         # dropout hyperparameters
         C.embd_pdrop = 0.1
-        C.resid_pdrop = 0.1
+        C.resid_pdrop = 0.1 # residual dropout
         C.attn_pdrop = 0.1
         return C
 
@@ -151,7 +152,7 @@ class GPT(nn.Module):
         self.lm_head = nn.Linear(config.n_embd, config.vocab_size, bias=False)
 
         # init all weights, and apply a special scaled init to the residual projections, per GPT-2 paper
-        self.apply(self._init_weights)
+        self.apply(self._init_weights)  # distinguish this torch Module .apply vs JAX flax Module .apply;
         for pn, p in self.named_parameters():
             if pn.endswith('c_proj.weight'):
                 torch.nn.init.normal_(p, mean=0.0, std=0.02/math.sqrt(2 * config.n_layer))
@@ -167,7 +168,7 @@ class GPT(nn.Module):
                 torch.nn.init.zeros_(module.bias)
         elif isinstance(module, nn.Embedding):
             torch.nn.init.normal_(module.weight, mean=0.0, std=0.02)
-        elif isinstance(module, nn.LayerNorm):
+        elif isinstance(module, nn.LayerNorm):  # layer norm is normalization across feature dimension, has param γ,β in y^=γx^+β, x^ is the normalized x;
             torch.nn.init.zeros_(module.bias)
             torch.nn.init.ones_(module.weight)
 
@@ -275,7 +276,7 @@ class GPT(nn.Module):
         # if we are given some desired targets also calculate the loss
         loss = None
         if targets is not None:
-            loss = F.cross_entropy(logits.view(-1, logits.size(-1)), targets.view(-1), ignore_index=-1)
+            loss = F.cross_entropy(logits.view(-1, logits.size(-1)), targets.view(-1), ignore_index=-1) #ignores the "-1" label in target;
 
         return logits, loss
 
