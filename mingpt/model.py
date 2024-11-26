@@ -44,10 +44,11 @@ class CausalSelfAttention(nn.Module):
         self.attn_dropout = nn.Dropout(config.attn_pdrop) #Dropout also scales up by 1/(1-p);
         self.resid_dropout = nn.Dropout(config.resid_pdrop)
         # causal mask to ensure that attention is only applied to the left in the input sequence
+        # adds "bias" as a non-trainable tensor param to self with no gradient;
         self.register_buffer("bias", torch.tril(torch.ones(config.block_size, config.block_size))
                                      .view(1, 1, config.block_size, config.block_size))
         self.n_head = config.n_head
-        self.n_embd = config.n_embd
+        self.n_embd = config.n_embd 
 
     def forward(self, x):
         B, T, C = x.size() # batch size, sequence length, embedding dimensionality (n_embd), T can be ≤config.block_size;
@@ -60,7 +61,7 @@ class CausalSelfAttention(nn.Module):
         v = v.view(B, T, self.n_head, C // self.n_head).transpose(1, 2) # (B, nh, T, hs)
 
         # causal self-attention; Self-attend: (B, nh, T, hs) x (B, nh, hs, T) -> (B, nh, T, T)
-        att = (q @ k.transpose(-2, -1)) * (1.0 / math.sqrt(k.size(-1)))
+        att = (q @ k.transpose(-2, -1)) * (1.0 / math.sqrt(k.size(-1))) # /√hs to ensure Var[dot product]=1;
         att = att.masked_fill(self.bias[:,:,:T,:T] == 0, float('-inf')) # if T≠config.block_size, use the T×T upper left corner, which is still mask;
         att = F.softmax(att, dim=-1)
         att = self.attn_dropout(att)
